@@ -48,6 +48,7 @@ While machine learning models are built in Python, business decisions are driven
 * **Operational 'Hit List':** A dynamically sorted matrix table that maps the ML predictions back to the original `CustomerID`. This provides customer success managers with a daily, pre-ranked list of exactly who to call, complete with demographic context like geography and active status.
 
 *(Below is a screenshot of the interactive dashboard in action)*
+
 ![Power BI Dashboard Screenshot](figures/powerbi_dashboard_screenshot.png)
 ## Technologies Used
 * **Python** (Pandas, NumPy)
