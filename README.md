@@ -36,7 +36,20 @@ This repository contains the end-to-end pipeline: from raw data ingestion and fe
 3. **Age Correlation:** Feature importance highlights Age as a primary driver of account closures, indicating that churn risk fluctuates significantly across different life stages. *Recommendation: Transition away from a one-size-fits-all retention strategy by segmenting the customer base into life-stage profiles, ensuring that proactive retention offers match their immediate financial needs.*
 4. **Activity Status:** Inactive members are a strong leading indicator of churn. *Recommendation: Deploy automated re-engagement campaigns before an account officially closes.*
 
+## Interactive Power BI Dashboard: From Predictions to Business Action
+
+While machine learning models are built in Python, business decisions are driven by interactive BI tools. To bridge the gap between predictive analytics and operational strategy, the final predictions and risk probabilities were exported from the Random Forest model and visualized in **Power BI**. 
+
+**The Purpose:** To transform abstract machine learning probabilities (e.g., "0.82 risk") into quantifiable financial metrics (e.g., "$125,000 at risk") and empower the retention team to operationalize the model without needing to read code.
+
+### Dashboard Highlights & Functionality:
+* **Dynamic 'Revenue at Risk' (What-If Parameter):** Built a custom DAX numeric range parameter that allows stakeholders to dynamically adjust the model's risk threshold (e.g., sliding from a 50% risk cutoff to an 80% risk cutoff). The dashboard instantly recalculates the total capital at risk, enabling leaders to balance their retention budget against the most critical flight risks.
+* **The Scatter Plot:** Engineered custom DAX conditional formatting to visually isolate high-net-worth individuals who also exhibit a high probability of churning. High-balance, high-risk targets automatically highlight in red, giving the VIP banking team an immediate priority matrix.
+* **Operational 'Hit List':** A dynamically sorted matrix table that maps the ML predictions back to the original `CustomerID`. This provides customer success managers with a daily, pre-ranked list of exactly who to call, complete with demographic context like geography and active status.
+
+*(Below is a screenshot of the interactive dashboard in action)*
+![Power BI Dashboard Screenshot](images/powerbi_dashboard_screenshot.png)
 ## Technologies Used
 * **Python** (Pandas, NumPy)
 * **Machine Learning:** Scikit-Learn, XGBoost
-* **Visualization:** Matplotlib, Seaborn
+* **Visualization:** Matplotlib, Seaborn, PowerBI
