@@ -16,6 +16,19 @@ Instead of applying blanket retention discounts to the entire customer base whic
 ### The Final Deliverable
 This repository contains the end-to-end pipeline: from raw data ingestion and feature engineering to model hyperparameter tuning. The final output is an exported dataset containing precise churn probability scores, designed specifically to feed directly into a BI tool for daily executive monitoring.
 
+### Reproducible modelling workflow
+
+The authoritative, leakage-safe workflow is [`notebook/Leakage_Safe_Modeling.ipynb`](notebook/Leakage_Safe_Modeling.ipynb). It performs model comparison and hyperparameter tuning using stratified cross-validation on the training partition only, then evaluates the selected model once on a sealed holdout set. The original `Churn_Prediction.ipynb` is retained as the exploratory analysis history.
+
+For a non-interactive run:
+
+```bash
+python run_modeling.py
+python -m unittest discover -s tests -v
+```
+
+Generated CV, holdout, and Power BI prediction outputs are written under `reports/`.
+
 ## Methodology
 
 1. **Exploratory Data Analysis:** Investigated the 79/21 class imbalance and visualized the relationship between demographics (Geography, Gender) and financial behavior (Balance, Active Status) with churn.

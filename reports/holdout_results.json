@@ -1,0 +1,59 @@
+{
+  "selection_metric": "cv_f1_mean",
+  "selected_model": "XGBoost",
+  "cv": "StratifiedKFold(n_splits=5, shuffle=True, random_state=42)",
+  "best_params": {
+    "classifier__subsample": 0.8,
+    "classifier__scale_pos_weight": 2.0,
+    "classifier__n_estimators": 200,
+    "classifier__max_depth": 3,
+    "classifier__learning_rate": 0.1,
+    "classifier__colsample_bytree": 0.8
+  },
+  "training_rows": 8000,
+  "holdout_rows": 2000,
+  "holdout_evaluation": {
+    "accuracy": 0.8535,
+    "precision": 0.6446700507614214,
+    "recall": 0.6240786240786241,
+    "f1": 0.634207240948814,
+    "roc_auc": 0.866848358373782,
+    "confusion_matrix": [
+      [
+        1453,
+        140
+      ],
+      [
+        153,
+        254
+      ]
+    ],
+    "classification_report": {
+      "0": {
+        "precision": 0.9047322540473225,
+        "recall": 0.9121155053358443,
+        "f1-score": 0.9084088777743045,
+        "support": 1593.0
+      },
+      "1": {
+        "precision": 0.6446700507614214,
+        "recall": 0.6240786240786241,
+        "f1-score": 0.634207240948814,
+        "support": 407.0
+      },
+      "accuracy": 0.8535,
+      "macro avg": {
+        "precision": 0.7747011524043719,
+        "recall": 0.7680970647072343,
+        "f1-score": 0.7713080593615592,
+        "support": 2000.0
+      },
+      "weighted avg": {
+        "precision": 0.8518095956786417,
+        "recall": 0.8535,
+        "f1-score": 0.8526088446803172,
+        "support": 2000.0
+      }
+    }
+  }
+}
