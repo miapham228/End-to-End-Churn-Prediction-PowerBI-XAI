@@ -1,89 +1,192 @@
-# Bank-Customer-Churn-Prediction
+# Bank Customer Churn Prediction with Explainable AI
 
-## Executive Summary & Business Value
+## Project overview
 
-Customer acquisition is roughly 5 to 25 times more expensive than customer retention. In retail banking, losing a high-net-worth individual doesn't just impact current account fees; it drains the bank's lending capital and destroys lifetime value (LTV).
+This project builds an end-to-end machine-learning workflow for predicting whether a bank customer will leave the bank. The target variable is `Exited`:
 
-This project bridges the gap between predictive analytics and proactive customer success. By deploying a leakage-safe, tuned XGBoost classifier, this project shifts the retention strategy from a **reactive** approach (trying to save a customer after they initiate an account closure) to a **proactive** one (intervening before the customer makes the decision to leave).
+```text
+0 = retained customer
+1 = churned customer
+```
 
-### Model ROI & Financial Impact
-Instead of applying blanket retention discounts to the entire customer base which wastes budget on loyal customers, this model enables targeted interventions. 
+The business objective is proactive retention: identify customers with elevated churn risk, prioritize outreach, estimate the balance exposed to churn, and provide explanations that can support retention decisions.
 
-* **Targeted Retention:** By selecting the model using cross-validated F1 and applying an operational risk threshold, the retention team can allocate expensive perks (e.g., fee waivers, dedicated account managers) to a high-risk segment rather than wasting budget on the ~80% of the customer base that the historical data indicates is naturally loyal.
-* **Capital Preservation:** Integrating the model's risk probabilities with Power BI allows stakeholders to instantly quantify **"Total Revenue at Risk."** This empowers leadership to prioritize outreach not just by churn probability, but by the highest account balances, actively protecting the bank's liquidity.
-* **Strategic Resource Allocation:** Model explanations identify account activity, geography, age, balance, and related customer characteristics as important churn drivers. By isolating inactive customers in higher-risk geographical segments, the marketing department can deploy specific, localized re-engagement campaigns rather than generic, bank-wide blasts.
+The dataset contains 10,000 customer records and includes demographic, financial, product, activity, and tenure variables. The churn class is the minority class, so accuracy alone is not sufficient for model selection.
 
-### The Final Deliverable
-This repository contains the end-to-end pipeline: from raw data ingestion and feature engineering to model hyperparameter tuning. The final output is an exported dataset containing precise churn probability scores, designed specifically to feed directly into a BI tool for daily executive monitoring.
+## Business use
 
-### Reproducible modelling workflow
+The model output is designed to support three decisions:
 
-The authoritative, leakage-safe workflow is [`notebook/Leakage_Safe_Modeling.ipynb`](notebook/Leakage_Safe_Modeling.ipynb). It performs model comparison and hyperparameter tuning using stratified cross-validation on the training partition only, selects the model by mean cross-validated F1, and then evaluates the selected model once on a sealed holdout set. The original `Churn_Prediction.ipynb` is retained as historical exploratory analysis; its earlier Random Forest conclusion should not be interpreted as the final model-selection result.
+- Which customers should be prioritized for retention outreach?
+- Which high-risk customers represent the greatest balance or revenue exposure?
+- What customer characteristics contribute to a prediction, and what hypothetical changes could move a customer to the retained class?
 
-For a non-interactive run:
+The exported predictions can be loaded into Power BI to create a dynamic risk dashboard, an operational customer hit list, and revenue-at-risk measures.
+
+## Leakage-safe modelling workflow
+
+The authoritative workflow is [`notebook/Leakage_Safe_Modeling.ipynb`](notebook/Leakage_Safe_Modeling.ipynb). The non-interactive entry point is [`run_modeling.py`](run_modeling.py).
+
+The workflow:
+
+1. Splits the data into an 80% training partition and a sealed 20% holdout partition using stratification.
+2. Applies feature engineering, preprocessing, and classification inside one scikit-learn pipeline.
+3. Compares Logistic Regression, SVM, Random Forest, and XGBoost.
+4. Tunes model hyperparameters using five-fold `StratifiedKFold` cross-validation on the training partition only.
+5. Evaluates candidate probability thresholds of `0.35`, `0.40`, `0.45`, and `0.50` using out-of-fold validation predictions.
+6. Selects one global threshold for each model based on its highest mean cross-validated F2 score.
+7. Selects the overall model using the tuned `cv_f2_mean`.
+8. Refits the selected pipeline on all training rows.
+9. Evaluates the selected model and threshold once on the untouched holdout set.
+
+The holdout is never used to fit feature engineering, scaling, encoding, hyperparameters, or the threshold. It is used only for the final performance report.
+
+### Why F2 and a tuned threshold?
+
+Churn is the positive class, and missing a real churner can be more expensive than contacting a customer who would have stayed. F2 gives recall more weight than precision:
+
+```text
+F2 emphasizes finding as many real churners as possible.
+```
+
+The probability threshold controls how aggressively customers are classified as high risk:
+
+```text
+lower threshold → more predicted churners, higher recall, more false positives
+higher threshold → fewer predicted churners, lower recall, fewer false positives
+```
+
+For each model, the code calculates F2 at every candidate threshold on every validation fold, averages each threshold across folds, and chooses one deployable threshold with the highest mean F2. It does not choose a different threshold for every fold.
+
+`cv_f2_mean` is the mean F2 at the selected threshold and is the primary comparison metric. `cv_f2_std` measures variation across folds. The report also stores the F2 score for each candidate threshold so the precision-recall trade-off can be inspected.
+
+The current implementation first selects the best hyperparameter configuration for each model using the search scorer, then performs probability-threshold tuning for that selected configuration. The threshold comparison uses `predict_proba()` consistently. This distinction is important for SVM, because `SVC.predict()` uses its decision function while `SVC.predict_proba()` uses calibrated probabilities.
+
+## Feature engineering and preprocessing
+
+The custom [`ChurnFeatureEngineer`](src/churn_workflow.py) transformer:
+
+- Removes technical identifiers: `RowNumber`, `CustomerId`, and `Surname`.
+- Excludes `HasCrCard` from the model features.
+- Creates:
+  - `Balance_per_Age`
+  - `Balance_per_Salary`
+  - `Tenure_per_Age`
+  - `CreditScore_per_Age`
+
+The preprocessing step uses a `ColumnTransformer`:
+
+- Numerical variables are standardized with `StandardScaler`.
+- Categorical variables (`Geography`, `Gender`, and `IsActiveMember`) are one-hot encoded.
+- Unknown categories are ignored safely during prediction.
+- Any columns not explicitly selected are dropped.
+
+Because all of these steps are inside the pipeline, calling:
+
+```python
+pipeline.predict(X_holdout)
+```
+
+automatically applies the same feature engineering and fitted preprocessing to the holdout data before generating predictions. The holdout is transformed, but it is not fitted.
+
+## Explainable AI
+
+### SHAP: why did the model make this prediction?
+
+SHAP is run after model selection. The fitted pipeline transforms the holdout data, and `transformed_frame()` preserves the encoded feature names for explanation.
+
+SHAP is used to:
+
+- Identify the most influential features globally.
+- Show whether a feature increases or decreases predicted churn risk.
+- Investigate nonlinear relationships in the selected tree model.
+- Support communication of model behavior to business stakeholders.
+
+SHAP explanations describe the model’s learned associations. They do not prove that changing a feature will cause a customer to stay.
+
+### DiCE: what hypothetical changes could alter the prediction?
+
+DiCE generates Diverse Counterfactual Explanations for an individual high-risk customer. The workflow:
+
+1. Filters customers whose predicted churn probability is at or above the selected threshold.
+2. Sends a high-risk customer to DiCE.
+3. Allows only selected actionable features to vary, such as `NumOfProducts`, `IsActiveMember`, and `CreditScore`.
+4. Requests counterfactuals with the opposite predicted class.
+5. Passes the generated counterfactual rows through the original fitted pipeline again.
+6. Displays the verified probability and prediction in a comparison table.
+
+The cross-check table includes:
+
+```python
+[
+    "CreditScore", "Geography", "Gender", "Age", "Tenure",
+    "Balance", "NumOfProducts", "IsActiveMember",
+    "EstimatedSalary", "New_Prediction", "New_Churn_Risk_%"
+]
+```
+
+Successful retention scenarios should have:
+
+```text
+New_Prediction = 0
+```
+
+The counterfactual rows are hypothetical scenarios, not new training observations. They must not be added back into the training dataset. They are model-consistency checks and possible intervention hypotheses, not causal guarantees.
+
+## Power BI output
+
+The final holdout predictions are exported to:
+
+```text
+reports/bank_churn_predictions.csv
+```
+
+The file contains the original customer information together with:
+
+- `Predicted_Churn`
+- `Churn_Risk_Percentage`
+
+The selected cross-validated threshold is used to create `Predicted_Churn`.
+
+The DAX measures in [`dax-measures/measures.md`](dax-measures/measures.md) support:
+
+- Total customer count.
+- Churn rate.
+- Critical flight-risk count.
+- Revenue at risk based on a dynamic risk threshold.
+- High-balance, high-risk customer highlighting.
+
+## Reports and reproducibility
+
+Run the complete non-interactive workflow with:
 
 ```bash
 python run_modeling.py
+```
+
+Run the tests with:
+
+```bash
 python -m unittest discover -s tests -v
 ```
 
-Generated CV, holdout, and Power BI prediction outputs are written under `reports/`.
+Generated files include:
 
-## Methodology
+- `reports/cv_model_comparison.csv`
+- `reports/holdout_results.json`
+- `reports/bank_churn_predictions.csv`
 
-1. **Exploratory Data Analysis:** Investigated the 79/21 class imbalance and visualized the relationship between demographics (Geography, Gender) and financial behavior (Balance, Active Status) with churn.
-2. **Feature Engineering:** Created new logical variables, such as `Balance_per_Age` ratios and a `High_Risk_Profile` flag for inactive customers in high-churn regions.
-3. **Data Preprocessing:** Utilized `scikit-learn`'s `ColumnTransformer` to apply `StandardScaler` to numerical features and `OneHotEncoder` to categorical features strictly after the train-test split to prevent data leakage.
-4. **Model Selection:** Trained and tuned multiple classification algorithms:
-   - Logistic Regression
-   - Support Vector Machine (SVM)
-   - Random Forest Classifier
-   - XGBoost
-5. **Selection and Evaluation:** Selected XGBoost using mean five-fold cross-validated F1 on the training partition, then evaluated it once on the untouched holdout partition using accuracy, precision, recall, F1, and ROC-AUC.
+The original [`notebook/Churn_Prediction.ipynb`](notebook/Churn_Prediction.ipynb) is retained as exploratory project history. The leakage-safe notebook and [`src/churn_workflow.py`](src/churn_workflow.py) are the current reference implementation.
 
-The leakage-safe workflow selected XGBoost. Its final holdout results were:
+## Technologies
 
-| Metric | Holdout result |
-|---|---:|
-| Accuracy | 0.8535 |
-| Precision | 0.6447 |
-| Recall | 0.6241 |
-| F1 | 0.6342 |
-| ROC-AUC | 0.8668 |
-
-F1 is used as the model-selection metric because churn is an imbalanced positive class and both identifying churners and limiting unnecessary interventions matter. Accuracy is reported but is not used alone to declare the winner.
-
-## Key Insights & Actionable Recommendations
-*Interpretability is just as important as accuracy. Using EDA and Feature Importances, the model revealed:*
-
-1. **The "Wealth" Flight Risk:** Customers with unusually high account balances are churning at a higher rate than low-balance customers. *Recommendation: Implement targeted premium perk programs or highly competitive interest rate matching for the top 10% of balance holders.*
-2. **The Geography Factor:** Customers located in Germany are significantly more likely to exit compared to those in France or Spain. *Recommendation: Investigate regional competitor offerings or localized customer service issues in the German market.*
-3. **Non-linear Risk Patterns (SHAP):** SHAP explanations are generated after model selection using the fitted XGBoost pipeline and encoded feature names. They show which characteristics contribute most to churn predictions and help investigate nonlinear relationships among age, credit score, balance, activity, geography, and engineered ratio features. These associations describe model behavior; they are not proof of causal effects.
-4. **Activity Status:** Inactive members are a strong leading indicator of churn. *Recommendation: Deploy automated re-engagement campaigns before an account officially closes.*
-
-*Beyond feature importance, the notebooks include optional **DiCE (Diverse Counterfactual Explanations)** analysis to generate individualized retention scenarios:*
-
-5. **Actionable Recourse (Beyond "Why" to "How"):** While feature importance tells us why a cohort churns, counterfactual explanations generate hypothetical changes that could move an *individual* to the opposite predicted class. In the leakage-safe notebook, DiCE varies `NumOfProducts`, `IsActiveMember`, and `CreditScore` while using training-partition data as its reference. For example, a high-risk customer may receive a scenario involving an additional product or active membership. These scenarios can support retention playbooks, but they are model-based suggestions rather than guaranteed causal interventions.
-*Recommendation: Use counterfactuals to design and test personalized offers, subject to business constraints, customer consent, and outcome monitoring.*
-
-6. **Counterfactual Verification:** In the exploratory notebook, synthetic profiles generated by DiCE are fed back through the live scikit-learn pipeline to verify their predicted outcomes. This is a model-consistency check, not a guarantee that changing a customer attribute will cause retention in the real world.
-*Recommendation: Treat DiCE results as hypotheses for retention experiments and validate them against business constraints, customer consent, and observed intervention outcomes before using them operationally.*
-
-## Interactive Power BI Dashboard: From Predictions to Business Action
-
-While machine learning models are built in Python, business decisions are driven by interactive BI tools. To bridge the gap between predictive analytics and operational strategy, the final predictions and risk probabilities were exported from the selected XGBoost model and visualized in **Power BI**. 
-
-**The Purpose:** To transform abstract machine learning probabilities (e.g., "0.82 risk") into quantifiable financial metrics (e.g., "$125,000 at risk") and empower the retention team to operationalize the model without needing to read code.
-
-### Dashboard Highlights & Functionality:
-* **Dynamic 'Revenue at Risk' (What-If Parameter):** Built a custom DAX numeric range parameter that allows stakeholders to dynamically adjust the model's risk threshold (e.g., sliding from a 50% risk cutoff to an 80% risk cutoff). The dashboard instantly recalculates the total capital at risk, enabling leaders to balance their retention budget against the most critical flight risks.
-* **The Scatter Plot:** Engineered custom DAX conditional formatting to visually isolate high-net-worth individuals who also exhibit a high probability of churning. High-balance, high-risk targets automatically highlight in red, giving the VIP banking team an immediate priority matrix.
-* **Operational 'Hit List':** A dynamically sorted matrix table that maps the ML predictions back to the original `CustomerID`. This provides customer success managers with a daily, pre-ranked list of exactly who to call, complete with demographic context like geography and active status.
-
-*(Below is a screenshot of the interactive dashboard in action)*
+- Python
+- Pandas and NumPy
+- scikit-learn
+- XGBoost
+- SHAP
+- DiCE
+- Matplotlib and Seaborn
+- Power BI
 
 ![Power BI Dashboard Screenshot](figures/powerbi_dashboard_screenshot.png)
-## Technologies Used
-* **Python** (Pandas, NumPy)
-* **Machine Learning:** Scikit-Learn, XGBoost
-* **Visualization:** Matplotlib, Seaborn, PowerBI
