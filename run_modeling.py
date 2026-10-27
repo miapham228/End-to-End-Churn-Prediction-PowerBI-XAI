@@ -25,7 +25,13 @@ def main() -> None:
 
     final_model, comparison, metadata = select_model(X_train, y_train)
     # First and only use of X_holdout/y_holdout in the modelling workflow.
-    holdout = evaluate_holdout(final_model, X_holdout, y_holdout)
+    selected_threshold = float(metadata["selected_threshold"])
+    holdout = evaluate_holdout(
+        final_model,
+        X_holdout,
+        y_holdout,
+        threshold=selected_threshold,
+    )
 
     REPORT_DIR.mkdir(exist_ok=True)
     comparison.to_csv(REPORT_DIR / "cv_model_comparison.csv", index=False)
@@ -38,8 +44,10 @@ def main() -> None:
     (REPORT_DIR / "holdout_results.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     predictions = data.loc[X_holdout.index].copy()
-    predictions["Predicted_Churn"] = final_model.predict(X_holdout)
     predictions["Churn_Risk_Percentage"] = final_model.predict_proba(X_holdout)[:, 1]
+    predictions["Predicted_Churn"] = (
+        predictions["Churn_Risk_Percentage"] >= selected_threshold
+    ).astype(int)
     predictions.to_csv(REPORT_DIR / "bank_churn_predictions.csv", index=False)
 
     print(comparison.drop(columns="best_params").to_string(index=False))
